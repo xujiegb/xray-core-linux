@@ -1,0 +1,132 @@
+name: xray-core rpm/deb (native x64/arm64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional upstream version (e.g. 1.8.24 or v1.8.24)"
+        required: false
+        type: string
+  schedule:
+    - cron: "05 1 * * *"
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xray-core-pack
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      should_build: ${{ steps.chk.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: v
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            v="${{ github.event.inputs.version }}"
+            [[ "$v" == v* ]] || v="v$v"
+          else
+            v=$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases \
+              | jq -r '[.[]|select(.draft==false and .prerelease==false)][0].tag_name')
+          fi
+          echo "tag=$v" >>"$GITHUB_OUTPUT"
+          echo "version=${v#v}" >>"$GITHUB_OUTPUT"
+
+      - id: chk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.v.outputs.tag }}" >/dev/null; then
+            echo "should_build=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "should_build=true" >>"$GITHUB_OUTPUT"
+          fi
+
+  rpm:
+    needs: resolve
+    if: needs.resolve.outputs.should_build == 'true'
+    strategy:
+      matrix:
+        include:
+          - arch_label: linux-x64
+            runs_on: ubuntu-24.04
+          - arch_label: linux-arm64
+            runs_on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs_on }}
+    container:
+      image: registry.access.redhat.com/ubi10/ubi:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - run: |
+          chmod +x ./package-rhel.sh
+          ./package-rhel.sh \
+            --version "${{ needs.resolve.outputs.version }}" \
+            --release 1 \
+            --outdir "$PWD/dist/${{ matrix.arch_label }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.arch_label }}
+          path: dist/${{ matrix.arch_label }}/*.rpm
+
+  deb:
+    needs: resolve
+    if: needs.resolve.outputs.should_build == 'true'
+    strategy:
+      matrix:
+        include:
+          - arch_label: linux-x64
+            runs_on: ubuntu-24.04
+          - arch_label: linux-arm64
+            runs_on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs_on }}
+    container:
+      image: debian:13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - run: |
+          chmod +x ./package-debian.sh
+          ./package-debian.sh \
+            --version "${{ needs.resolve.outputs.version }}" \
+            --revision 1 \
+            --outdir "$PWD/dist/${{ matrix.arch_label }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch_label }}
+          path: dist/${{ matrix.arch_label }}/*.deb
+
+  release:
+    needs: [resolve, rpm, deb]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: ${{ needs.resolve.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/**/**/*.rpm
+            dist/**/**/*.deb
