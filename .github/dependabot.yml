@@ -8,9 +8,6 @@ updates:
       time: "03:00"
       timezone: "Asia/Tokyo"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "github-actions"
     commit-message:
       prefix: "deps(actions)"
     groups:
