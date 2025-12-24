@@ -53,6 +53,7 @@ jobs:
           fi
 
   rpm:
+    name: build ${{ matrix.arch_label }} (Red Hat)
     needs: resolve
     if: needs.resolve.outputs.should_build == 'true'
     strategy:
@@ -84,6 +85,7 @@ jobs:
           path: dist/${{ matrix.arch_label }}/*.rpm
 
   deb:
+    name: build ${{ matrix.arch_label }} (Debian)
     needs: resolve
     if: needs.resolve.outputs.should_build == 'true'
     strategy:
