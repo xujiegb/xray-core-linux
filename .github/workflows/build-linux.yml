@@ -27,7 +27,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       should_build: ${{ steps.chk.outputs.should_build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - id: v
         run: |
@@ -66,8 +66,8 @@ jobs:
     container:
       image: registry.access.redhat.com/ubi10/ubi:latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.x"
 
@@ -78,7 +78,7 @@ jobs:
             --release 1 \
             --outdir "$PWD/dist/${{ matrix.arch_label }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: rpm-${{ matrix.arch_label }}
           path: dist/${{ matrix.arch_label }}/*.rpm
@@ -97,8 +97,8 @@ jobs:
     container:
       image: debian:13
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.x"
 
@@ -109,7 +109,7 @@ jobs:
             --revision 1 \
             --outdir "$PWD/dist/${{ matrix.arch_label }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: deb-${{ matrix.arch_label }}
           path: dist/${{ matrix.arch_label }}/*.deb
@@ -118,7 +118,7 @@ jobs:
     needs: [resolve, rpm, deb]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: dist
 
