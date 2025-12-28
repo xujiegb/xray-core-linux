@@ -160,7 +160,6 @@ Name: ${PKGNAME}
 Version: ${VERSION}
 Release: ${RELEASE}%{?dist}
 Summary: Xray-core
-
 License: MPL-2.0
 URL: https://github.com/XTLS/Xray-core
 Source0: %{name}-%{version}.tar.gz
