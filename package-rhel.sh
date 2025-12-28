@@ -159,7 +159,7 @@ cat >"$RPMTOP/SPECS/${PKGNAME}.spec" <<EOF
 Name: ${PKGNAME}
 Version: ${VERSION}
 Release: ${RELEASE}%{?dist}
-Summary: Xray-core (layout aligned with official install-release.sh)
+Summary: Xray-core
 
 License: MPL-2.0
 URL: https://github.com/XTLS/Xray-core
