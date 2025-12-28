@@ -28,6 +28,11 @@ done
 PKGNAME="xray-core"
 UPSTREAM_REPO="https://github.com/XTLS/Xray-core.git"
 
+# Align with official Xray-install defaults
+LOCAL_PREFIX="/usr/local"
+DAT_PATH="${LOCAL_PREFIX}/share/xray"
+JSON_PATH="${LOCAL_PREFIX}/etc/xray"
+
 [[ -n "${OUTDIR:-}" ]] || OUTDIR="$PWD"
 mkdir -p "$OUTDIR"
 
@@ -51,6 +56,9 @@ need_cmd rpmbuild
 echo "[*] go: $(go version)"
 echo "[*] arch: $(uname -m)"
 echo "[*] outdir: $OUTDIR"
+echo "[*] prefix: $LOCAL_PREFIX"
+echo "[*] DAT_PATH: $DAT_PATH"
+echo "[*] JSON_PATH: $JSON_PATH"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -76,8 +84,7 @@ chmod 0755 "$OUT/xray"
 
 mkdir -p "$WORK/resources"
 LIST=('Loyalsoldier v2ray-rules-dat geoip geoip' 'Loyalsoldier v2ray-rules-dat geosite geosite')
-for i in "${LIST[@]}"
-do
+for i in "${LIST[@]}"; do
   INFO=($(echo $i | awk 'BEGIN{FS=" ";OFS=" "} {print $1,$2,$3,$4}'))
   FILE_NAME="${INFO[3]}.dat"
   HASH="$(curl -sL "https://raw.githubusercontent.com/${INFO[0]}/${INFO[1]}/release/${INFO[2]}.dat.sha256sum" | awk -F ' ' '{print $1}')"
@@ -93,24 +100,46 @@ done
 
 STAGE="$RPMTOP/BUILD/${PKGNAME}-${VERSION}"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/etc/xray"
+mkdir -p "$STAGE${DAT_PATH}" "$STAGE${JSON_PATH}"
 
 install -m0755 "$OUT/xray" "$STAGE/xray"
 install -m0644 "$WORK/resources/geoip.dat" "$STAGE/geoip.dat"
 install -m0644 "$WORK/resources/geosite.dat" "$STAGE/geosite.dat"
 
-cat >"$STAGE/etc/xray/config.json" <<'EOF'
+cat >"$STAGE${JSON_PATH}/config.json" <<'EOF'
 { "log": { "loglevel": "warning" }, "inbounds": [], "outbounds": [] }
 EOF
 
-cat >"$STAGE/${PKGNAME}.service" <<'EOF'
+# Align service name and default ExecStart path with official expectations
+cat >"$STAGE/xray.service" <<EOF
 [Unit]
-Description=Xray-core
-After=network-online.target
+Description=Xray Service
+After=network-online.target nss-lookup.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/xray run -config /etc/xray/config.json
+ExecStart=${LOCAL_PREFIX}/bin/xray run -config ${JSON_PATH}/config.json
 Restart=on-failure
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat >"$STAGE/xray@.service" <<EOF
+[Unit]
+Description=Xray Service (Instance)
+After=network-online.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+ExecStart=${LOCAL_PREFIX}/bin/xray run -config ${JSON_PATH}/%i.json
+Restart=on-failure
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1000000
 
 [Install]
 WantedBy=multi-user.target
@@ -125,7 +154,7 @@ cat >"$RPMTOP/SPECS/${PKGNAME}.spec" <<EOF
 Name: ${PKGNAME}
 Version: ${VERSION}
 Release: ${RELEASE}%{?dist}
-Summary: Xray-core
+Summary: Xray-core (layout aligned with official install-release.sh)
 
 License: MPL-2.0
 URL: https://github.com/XTLS/Xray-core
@@ -145,29 +174,41 @@ Xray-core is a platform for building proxies.
 
 %install
 rm -rf %{buildroot}
-install -D -m0755 xray %{buildroot}%{_bindir}/xray
-install -D -m0644 geoip.dat %{buildroot}%{_bindir}/geoip.dat
-install -D -m0644 geosite.dat %{buildroot}%{_bindir}/geosite.dat
-install -D -m0644 etc/xray/config.json %{buildroot}%{_sysconfdir}/xray/config.json
-install -D -m0644 %{name}.service %{buildroot}%{_unitdir}/%{name}.service
+
+# binary -> /usr/local/bin/xray
+install -D -m0755 xray %{buildroot}${LOCAL_PREFIX}/bin/xray
+
+# geodata -> /usr/local/share/xray/*.dat
+install -D -m0644 geoip.dat %{buildroot}${DAT_PATH}/geoip.dat
+install -D -m0644 geosite.dat %{buildroot}${DAT_PATH}/geosite.dat
+
+# config -> /usr/local/etc/xray/config.json
+install -D -m0644 ${JSON_PATH}/config.json %{buildroot}${JSON_PATH}/config.json
+
+# unit names aligned with official (still installed into %{_unitdir})
+install -D -m0644 xray.service %{buildroot}%{_unitdir}/xray.service
+install -D -m0644 xray@.service %{buildroot}%{_unitdir}/xray@.service
 
 %post
-%systemd_post %{name}.service
+%systemd_post xray.service
 
 %preun
-%systemd_preun %{name}.service
+%systemd_preun xray.service
 
 %postun
-%systemd_postun_with_restart %{name}.service
+%systemd_postun_with_restart xray.service
 
 %files
 %license LICENSE
 %doc README.md
-%{_bindir}/xray
-%{_bindir}/geoip.dat
-%{_bindir}/geosite.dat
-%config(noreplace) %{_sysconfdir}/xray/config.json
-%{_unitdir}/%{name}.service
+
+${LOCAL_PREFIX}/bin/xray
+${DAT_PATH}/geoip.dat
+${DAT_PATH}/geosite.dat
+%config(noreplace) ${JSON_PATH}/config.json
+
+%{_unitdir}/xray.service
+%{_unitdir}/xray@.service
 EOF
 
 rpmbuild -ba "$RPMTOP/SPECS/${PKGNAME}.spec"
