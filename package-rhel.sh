@@ -43,8 +43,9 @@ if command -v dnf >/dev/null 2>&1; then
     golang \
     rpm-build rpmdevtools redhat-rpm-config \
     systemd-rpm-macros \
-    tar gzip findutils which shadow-utils \
-    coreutils
+    tar gzip findutils which shadow-utils
+  # UBI10 ships coreutils-single; installing coreutils will conflict. Only install fallback if needed.
+  command -v sha256sum >/dev/null 2>&1 || dnf -y install coreutils-single
   dnf -y clean all || true
 else
   die "dnf not found"
