@@ -169,7 +169,7 @@ Version: ${VERSION}-${REVISION}
 Architecture: $(dpkg --print-architecture)
 Maintainer: xray-core packager
 Depends: systemd
-Description: Xray-core (layout aligned with official install-release.sh)
+Description: Xray-core
 EOF
 
 OUTDEB="$OUTDIR/xray-core_${VERSION}-${REVISION}_$(dpkg --print-architecture).deb"
