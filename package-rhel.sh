@@ -43,7 +43,8 @@ if command -v dnf >/dev/null 2>&1; then
     golang \
     rpm-build rpmdevtools redhat-rpm-config \
     systemd-rpm-macros \
-    tar gzip findutils which shadow-utils
+    tar gzip findutils which shadow-utils \
+    coreutils
   dnf -y clean all || true
 else
   die "dnf not found"
@@ -52,6 +53,8 @@ fi
 need_cmd git
 need_cmd go
 need_cmd rpmbuild
+need_cmd sha256sum
+need_cmd tar
 
 echo "[*] go: $(go version)"
 echo "[*] arch: $(uname -m)"
@@ -87,10 +90,10 @@ LIST=('Loyalsoldier v2ray-rules-dat geoip geoip' 'Loyalsoldier v2ray-rules-dat g
 for i in "${LIST[@]}"; do
   INFO=($(echo $i | awk 'BEGIN{FS=" ";OFS=" "} {print $1,$2,$3,$4}'))
   FILE_NAME="${INFO[3]}.dat"
-  HASH="$(curl -sL "https://raw.githubusercontent.com/${INFO[0]}/${INFO[1]}/release/${INFO[2]}.dat.sha256sum" | awk -F ' ' '{print $1}')"
-  curl -sL "https://raw.githubusercontent.com/${INFO[0]}/${INFO[1]}/release/${INFO[2]}.dat" -o "$WORK/resources/${FILE_NAME}"
+  HASH="$(curl -fsSL "https://raw.githubusercontent.com/${INFO[0]}/${INFO[1]}/release/${INFO[2]}.dat.sha256sum" | awk '{print $1}')"
+  curl -fsSL "https://raw.githubusercontent.com/${INFO[0]}/${INFO[1]}/release/${INFO[2]}.dat" -o "$WORK/resources/${FILE_NAME}"
   [ -s "$WORK/resources/${FILE_NAME}" ] || die "${FILE_NAME} download failed/empty"
-  [ "$(sha256sum "$WORK/resources/${FILE_NAME}" | awk -F ' ' '{print $1}')" == "${HASH}" ] || die "The HASH key of ${FILE_NAME} does not match cloud one."
+  [ "$(sha256sum "$WORK/resources/${FILE_NAME}" | awk '{print $1}')" == "${HASH}" ] || die "The HASH key of ${FILE_NAME} does not match cloud one."
 done
 
 RPMTOP="$HOME/rpmbuild"
@@ -100,6 +103,7 @@ done
 
 STAGE="$RPMTOP/BUILD/${PKGNAME}-${VERSION}"
 rm -rf "$STAGE"
+
 mkdir -p "$STAGE${DAT_PATH}" "$STAGE${JSON_PATH}"
 
 install -m0755 "$OUT/xray" "$STAGE/xray"
@@ -110,7 +114,6 @@ cat >"$STAGE${JSON_PATH}/config.json" <<'EOF'
 { "log": { "loglevel": "warning" }, "inbounds": [], "outbounds": [] }
 EOF
 
-# Align service name and default ExecStart path with official expectations
 cat >"$STAGE/xray.service" <<EOF
 [Unit]
 Description=Xray Service
@@ -148,6 +151,7 @@ EOF
 [[ -f "$SRC/LICENSE" ]] && cp "$SRC/LICENSE" "$STAGE/LICENSE"
 [[ -f "$SRC/README.md" ]] && cp "$SRC/README.md" "$STAGE/README.md"
 
+# build tarball from STAGE
 tar -C "$RPMTOP/BUILD" -czf "$RPMTOP/SOURCES/${PKGNAME}-${VERSION}.tar.gz" "${PKGNAME}-${VERSION}"
 
 cat >"$RPMTOP/SPECS/${PKGNAME}.spec" <<EOF
@@ -183,7 +187,8 @@ install -D -m0644 geoip.dat %{buildroot}${DAT_PATH}/geoip.dat
 install -D -m0644 geosite.dat %{buildroot}${DAT_PATH}/geosite.dat
 
 # config -> /usr/local/etc/xray/config.json
-install -D -m0644 ${JSON_PATH}/config.json %{buildroot}${JSON_PATH}/config.json
+# IMPORTANT: must be a path inside the unpacked source tree, NOT host /usr/local/...
+install -D -m0644 usr/local/etc/xray/config.json %{buildroot}${JSON_PATH}/config.json
 
 # unit names aligned with official (still installed into %{_unitdir})
 install -D -m0644 xray.service %{buildroot}%{_unitdir}/xray.service
@@ -209,6 +214,10 @@ ${DAT_PATH}/geosite.dat
 
 %{_unitdir}/xray.service
 %{_unitdir}/xray@.service
+
+%changelog
+* Sun Dec 28 2025 Jie Xu <xujie@example.invalid> - ${VERSION}-${RELEASE}
+- Build aligned layout with official install-release.sh
 EOF
 
 rpmbuild -ba "$RPMTOP/SPECS/${PKGNAME}.spec"
